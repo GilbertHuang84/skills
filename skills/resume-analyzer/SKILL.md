@@ -1,179 +1,311 @@
 ---
 name: resume-analyzer
-description: >
-  Analyze a resume to extract structured insights: career trajectory, skill inventory,
-  strengths/weaknesses, development directions, and job search keywords. Use when the user
-  wants to: (1) Analyze their resume for job search preparation, (2) Extract search keywords
-  for job platforms, (3) Identify career strengths and gaps, (4) Get development direction
-  recommendations, (5) Prepare for resume-job matching analysis.
-  Triggers: "简历分析", "分析简历", "resume analysis", "搜索关键词", "求职方向",
-  "职业发展", "简历提炼", "我的优势劣势".
+description: |
+  简历分析系统，适用于在校学生和职业人士。对简历进行系统性的结构化分析，产出审阅报告供下游 SKILL 使用。
+
+  本 SKILL 可独立使用，也可从 career-navigator、resume-optimizer、resume-job-matcher 衔接进入。
+
+  核心能力：
+  (1) 经历清单梳理：将所有经历整理为时间线，标记完整度（🟢🟡🔴）
+  (2) 深度探针：通过情境还原法挖掘经历细节（场景/困难/决策/反思/他人视角）
+  (3) 亮点提取：从经历中提取核心贡献、能力证据、成长轨迹、被忽略亮点、可迁移能力
+  (4) 四维审视：从 HR、技术/专业、业务、决策层四个视角审视简历
+  (5) 审阅存档：所有分析结果结构化存档，供下游 SKILL 读取
+
+  触发场景：
+  - 用户上传简历并希望获得分析
+  - career-navigator Phase 2 经历深潜时调用
+  - resume-optimizer 生成外部简历前调用
+  - resume-job-matcher 生成匹配报告前调用（替代其 Part A）
 ---
 
-# Resume Analyzer
+# Resume Analyzer — 简历分析系统
 
-Analyze resumes to produce structured insights for job search preparation.
+## 设计哲学
 
-## Workflow
+**核心原则：简历分析是所有简历相关工作的前置环节。不经过系统分析就优化简历，等于在不知道原材料质量的情况下就开始加工。**
 
-### Step 1: Read Resume & Completeness Check
+本 SKILL 从 resume-optimizer 的信息收集和四维审视能力中独立出来，专注于"分析"这一环节，为下游 SKILL 提供结构化的分析输入。
 
-Read resume from `data/resume/` (supports `.md`, `.docx`, `.pdf`).
+**定位：**
+- 本 SKILL 是一个**分析器**，不负责生成外部简历
+- 分析结果以结构化存档形式输出，供 resume-optimizer、resume-job-matcher、career-navigator 读取
+- 可以独立使用（用户只想了解自己简历的情况），也可以被其他 SKILL 调用
 
-**After reading, perform a completeness check** using the following checklist. Mark each item as ✅ Present or ❌ Missing.
+## 输入来源
 
-#### Resume Completeness Checklist
+| 来源 | 提供的信息 | 精准度 |
+|------|-----------|--------|
+| **career-navigator 完整存档** | 内部简历 + 经历深潜结果 + 模拟评估 + 能力雷达 | 最高 |
+| **career-navigator 部分存档** | profile.md + timeline.md（无深潜） | 高 |
+| **用户直接提供的简历** | 基本经历和技能信息 | 基础 |
+| **用户口头描述** | 通过对话逐步收集 | 基础 |
 
-> **注意**：薪资信息和离职原因**不适合**写在简历中。薪资在面试沟通阶段讨论，离职原因在面试中被问到时口头回答。以下清单仅包含适合补充到简历中的内容。
+**优先使用最丰富的输入来源。**
 
-| 优先级 | 检查项 | 具体说明与补充方法 |
-|--------|--------|-------------------|
-| 🔴 高 | **量化成果** | 为每个项目补充可量化的结果。例如：不是写"搭建了流程系统"，而是写"搭建流程系统，将任务并行处理能力从百级提升至万级，降低PM管理成本约40%"。适合补充的数据类型：效率提升百分比、覆盖人数/部门数、节省的时间/成本、系统处理量级、项目规模（如"支持XX人团队协作"）。如果某些成果确实难以量化，可以用"首个"、"从零到一"、"覆盖全公司"等定性描述代替。 |
-| 🔴 高 | **管理规模** | 为每个管理岗位补充团队人数和汇报关系。例如："管理8人技术团队，向CTO汇报"。如果没有直接管理经验，可以写"协调跨部门XX人团队"。不适合编造数字，但可以根据实际协作范围合理估算。 |
-| 🟡 中 | **作品集链接** | 补充可展示的技术成果链接。适合补充的内容：GitHub仓库（有实际代码的）、技术博客文章（CSDN/掘金/知乎）、Demo视频（B站/YouTube）、在线作品集网站。不适合放的内容：公司内部系统的截图（可能涉密）、无法公开的项目。如果没有现成的，建议花1-2周整理2-3个代表性项目的技术文档或Demo。 |
-| 🟡 中 | **语言能力** | 补充语言水平描述。例如："英语：读写熟练（在外资公司3年全英文工作环境），口语可进行技术讨论"。如果有托福/雅思/六级成绩，直接写分数。不适合写"英语良好"这种模糊描述，要给出具体场景证据。 |
-| 🟡 中 | **项目时间线** | 为每个项目补充起止时间。格式："2022.07 - 2023.12"。如果项目是业余时间做的，标注"业余项目"。时间线帮助HR判断经验的新鲜度和项目并行情况。不适合编造时间，如果记不清可以写年份（如"2022年"）。 |
-| 🟢 低 | **行业认证** | 补充相关认证或获奖记录。例如：AWS认证、PMP、行业技术大会演讲、公司内部技术奖项。如果没有，不需要为了补充而考证——把精力放在量化成果上收益更大。 |
-| 🟢 低 | **社区贡献** | 补充开源项目或技术分享记录。例如：GitHub开源项目（标明star数和贡献角色）、技术大会演讲、技术社区活跃度。如果没有，建议从写1-2篇技术博客开始，比考证门槛更低、见效更快。 |
+## 存档协议
 
-**不适合写入简历的内容**（不要建议用户补充）：
-- ❌ 薪资信息/期望薪资 — 在面试沟通阶段讨论，不写在简历上
-- ❌ 离职原因 — 在面试中被问到时口头回答，不写在简历上
-- ❌ 个人联系方式中的非必要信息（如身份证号、详细家庭住址）
+存档文件路径统一指向 `data/{用户标识}/` 目录：
 
-**Output**: Include a "简历完整性评估" section in the analysis report, listing missing items with specific suggestions for how to supplement them. This section feeds into the resume-job-matcher's "简历调整策略" dimension.
+```
+data/
+└── {用户标识}/
+    ├── internal-resume.md              # 内部简历（个人档案馆）
+    ├── profile.md                      # 用户画像（回写更新）
+    └── resume-reviews/
+        ├── review-2026-04-20.md        # 按日期存储的审阅报告
+        └── review-2026-05-15.md
+```
 
-### Step 2: Extract Structured Data
+存档模板见 [references/archiving-protocol.md](references/archiving-protocol.md)。
 
-Parse the resume into these categories:
+---
 
-#### 2.1 Career Timeline
+## Phase 1：信息收集
 
-| Field | Description |
-|-------|-------------|
-| Companies | Name, role, duration, industry |
-| Trajectory pattern | Upward/lateral/downward/stable |
-| Industry switches | Which industries and when |
-| Tenure length | Average tenure per company |
+**目标：** 收集用户的经历信息，建立内部简历。
 
-#### 2.2 Skill Inventory
+### Step 1.1 检测输入
 
-Categorize every mentioned skill:
+按优先级检测可用的输入来源：
 
-| Category | Examples |
-|----------|---------|
-| Programming languages | Python, C++, C#, JavaScript |
-| 专业工具/软件 | 行业专业软件 (e.g., IDE, design tools, domain-specific platforms) |
-| Frameworks/platforms | Docker, K8s, Qt, Flask |
-| Domain expertise | 技术负责人, 研发, AI应用, 数据工程 |
-| Databases | MySQL, MongoDB, Redis |
-| Project tools | Jira, Git, SVN, etc. |
-| Soft skills | Team management, cross-team communication |
+1. **career-navigator 存档**：检查 `data/{用户标识}/` 下是否存在 `internal-resume.md`、`timeline.md`、`profile.md`
+   - 如果存在完整存档 → 直接读取，进入 Step 1.2 确认是否有新增经历
+   - 如果存在部分存档 → 读取已有内容，补充缺失部分
+2. **用户上传简历**：读取简历文件，提取经历信息
+3. **用户口头描述**：通过提问收集（每轮 3-5 个问题，分多轮完成）
 
-#### 2.3 Project Highlights
+**如果从 career-navigator 衔接进入**，优先使用其存档数据，避免重复询问用户已经提供过的信息。
 
-For each significant project:
-- Project name and scale
-- Candidate's specific role and contribution
-- Technologies used
-- Measurable outcomes (if mentioned)
+### Step 1.2 经历清单梳理
 
-### Step 3: Analyze Strengths & Weaknesses
+将用户的所有经历整理成时间线，标记信息完整度：
 
-#### Strengths Analysis
+- 🟢 完整：能清晰描述背景、任务、行动、结果
+- 🟡 部分：有大致印象但细节模糊
+- 🔴 空白：只记得做过，说不清细节
 
-Evaluate across four dimensions:
+**输出格式：**
 
-1. **Technical depth**: Years of experience in core skills, complexity of projects handled
-2. **Breadth**: Range of skills across different domains (技术 + 工具 + 管理)
-3. **Leadership**: Team management, cross-team coordination, mentoring
-4. **Industry recognition**: Awards, certifications, notable projects/companies
+```
+## 经历清单
 
-#### Weaknesses Analysis
+| # | 时间段 | 经历 | 类型 | 完整度 |
+|---|--------|------|------|--------|
+| 1 | 2025.06 - 2025.09 | XX公司实习 | 实习 | 🟢 |
+| 2 | 2024.09 - 2025.06 | XX项目 | 项目 | 🟡 |
+| 3 | 2023.09 - 2024.06 | XX课程设计 | 课程 | 🔴 |
+```
 
-Evaluate across four dimensions:
+### Step 1.3 深度探针
 
-1. **Skill gaps**: Skills commonly required in target roles but missing from resume
-2. **Skill stagnation**: Skills not used recently (see decay timeline in analysis-dimensions.md)
-3. **Career trajectory risks**: Frequent job changes, lack of promotion progression, industry stagnation
-4. **Visibility gaps**: Lack of measurable outcomes, no open-source/community contributions, no thought leadership
+对 🟡/🔴 经历，使用**情境还原法**进行探针。
 
-### Step 3.5: Resume Vulnerability Analysis (简历漏洞分析)
+**5 个探针问题：**
 
-> **目的**：站在HR/面试官的角度审视简历，找出可能引发质疑的地方。这不是"信息缺失"（已在Step 1处理），而是"逻辑冲突、可信度问题、潜在疑虑"。
+1. **场景还原**：你能描述一个具体的场景吗？
+2. **困难聚焦**：你遇到的最大困难是什么？怎么处理的？
+3. **决策回溯**：有没有哪个时刻你需要做一个选择？
+4. **结果反思**：做得最好的是什么？最遗憾的是什么？
+5. **他人视角**：如果当时跟你一起的人来评价你，他们会怎么说？
 
-**分析维度**：
+**探针原则：**
+- 每轮 3-5 个问题
+- 一次只深挖 1-2 段经历
+- 用户说"记不清了"直接接受，不追问
+- 关注描述中的细节密度——细节越多，经历越有价值
 
-| 维度 | 具体检查项 | 疑虑类型 |
-|------|-----------|---------|
-| **时间线矛盾** | 各段工作经历的时间是否有重叠或空缺？频繁跳槽的时间间隔是否合理？ | 逻辑冲突 |
-| **职级合理性** | 从初级到高级/管理的晋升速度是否合理？是否有"跳级"现象？ | 可信度 |
-| **能力与职级匹配** | 简历声称的管理能力是否与实际管理年限匹配？技术深度是否与工作年限匹配？ | 可信度 |
-| **行业跨度** | 跨行业跳槽是否有合理的逻辑？是否显得"什么都做过但都不深"？ | 逻辑冲突 |
-| **项目规模真实性** | 项目描述的规模和影响力是否与公司规模匹配？（如10人公司声称"全行业领先"） | 可信度 |
-| **技能广度疑虑** | 列出的技能是否过多过杂？是否像"什么都懂一点"而非"有核心竞争力"？ | 差异化 |
-| **频繁跳槽信号** | 2年内换了3家以上公司？是否有稳定工作的记录？ | 稳定性 |
-| **描述模糊** | 是否有大量形容词但缺乏具体事实？（如"负责核心系统开发"但没说是什么系统） | 可信度 |
-| **年龄/经验匹配** | 工作年限与技能深度是否匹配？是否有"10年经验但只有3年水平"的嫌疑？ | 可信度 |
-| **信息一致性** | 不同段落描述的同一经历是否一致？时间线、职责范围是否有矛盾？ | 逻辑冲突 |
+**探针节奏：**
+- 先处理 🟡 经历（有基础信息，需要补充细节）
+- 再处理 🔴 经历（信息空白，需要从零开始）
+- 如果经历较多，按时间倒序优先处理最近的经历
 
-**输出格式**：
+### Step 1.4 产出内部简历
 
-对每个发现的漏洞，提供：
-1. **问题描述**：具体是什么疑虑
-2. **严重程度**：🔴高（很可能被质疑）/ 🟡中（可能被注意到）/ 🟢低（小问题）
-3. **应对建议**：如何在面试中解释或如何在简历中调整
+将所有收集到的信息整理为内部简历，保存到 `data/{用户标识}/internal-resume.md`。
 
-**注意**：不是所有简历都有漏洞。如果分析后没有发现明显问题，明确说明"未发现明显逻辑冲突或可信度疑虑"。
+**内部简历特点：**
+- 忠实记录所有经历，不管"有没有用"
+- 包含完整的过程细节、困难、反思
+- 主要读者是自己
+- 随着时间持续积累
 
-### Step 4: Development Direction Analysis
+**存档：** 创建或更新 `data/{用户标识}/internal-resume.md`
 
-Based on strengths and weaknesses, identify 2-4 viable career directions:
+---
 
-For each direction, assess:
-- **Fit score** (0-100%): How well current skills map to this direction
-- **Growth potential**: Market demand, salary ceiling, career longevity
-- **Investment needed**: Skills to learn, time to transition
-- **Risk level**: Competition, industry stability
-- **Policy alignment**: Whether this direction aligns with national policy tailwinds (see resume-job-matcher's `references/policy-analysis.md`)
+## Phase 2：信息提取
 
-### Step 5: Generate Search Keywords
+**目标：** 从内部简历中提取所有有价值的信息点。
 
-Produce three tiers of keywords for job platforms:
+### Step 2.1 逐段经历提取
 
-#### Tier 1: Primary Keywords (必搜)
-Direct matches from resume job titles and core skills.
-- Example: "技术负责人", "流程开发", "研发工程师"
+对每段经历，提取以下 6 个维度：
 
-#### Tier 2: Extended Keywords (扩展搜)
-Adjacent roles that leverage existing skills.
-- Example: "技术美术", "TA", "AI应用开发", "数据平台"
+| 维度 | 提取内容 | 说明 |
+|------|---------|------|
+| **核心贡献** | 用户真正做了什么（区别于团队贡献） | 区分"参与了"和"负责了" |
+| **能力证据** | 这段经历证明了什么能力 | 具体到可验证的行为 |
+| **成长轨迹** | 从开始到结束，用户发生了什么变化 | 技能提升、认知转变等 |
+| **被忽略的亮点** | 用户自己没意识到但值得强调的部分 | 常见于"我就是打杂的"的自述 |
+| **可迁移能力** | 这段经历中的哪些能力可以迁移到其他岗位 | 跨行业/跨岗位的通用能力 |
+| **量化数据** | 一切可以量化的结果 | 数字、百分比、时间、规模等 |
 
-#### Tier 3: Aspirational Keywords (探索搜)
-Roles one step beyond current profile, requiring moderate upskilling.
-- Example: "技术总监", "研发负责人", "技术主管"
+**关键判断——当用户自我贬低时：**
 
-Also generate **negative keywords** to filter out irrelevant results:
-- Example: "半导体测试开发", "人力资源发展", "企业培训"
+| 用户自述 | 探针方向 | 目的 |
+|---------|---------|------|
+| "我其实就是打杂的" | 有没有主动做过超出预期的事？ | 挖掘主动性 |
+| "这个项目没什么技术含量" | 没有技术优势的情况下怎么解决问题的？ | 挖掘问题解决能力 |
+| "都是队友做的" | 你负责哪部分？没有你会出什么问题？ | 挖掘个人贡献 |
 
-### Step 6: Output
+### Step 2.2 产出信息完备的简历草稿
 
-Generate a DOCX report with:
-1. **Resume completeness assessment** (from Step 1 checklist, with supplement suggestions)
-2. **Resume vulnerability analysis** (from Step 3.5, HR perspective credibility check)
-3. Career trajectory summary
-4. Skill inventory table (with timeliness status)
-5. Strengths & weaknesses analysis
-6. Development direction recommendations
-7. Search keyword tiers
-8. Company type fit analysis (see references/company-types.md)
+将提取的信息整理为一份"信息完备"的简历草稿——不一定好看，但信息密度高、事实准确。
 
-**Output**: Save to workspace as `resume_analysis_report.docx`
+**注意：** 此草稿仅作为中间产物，不直接用于投递。它的作用是确保所有有价值的信息都被捕获，为后续的四维审视提供完整素材。
 
-## Integration with resume-job-matcher
+---
 
-The output of this skill feeds into `resume-job-matcher`:
-- Search keywords → used to filter job listings
-- Weaknesses → referenced in per-job match analysis
-- Development directions → used to evaluate company type fit
-- Skill timeliness → shared with job matcher's skill assessment
+## Phase 3：四维审视
+
+**目标：** 从四类读者的视角审视简历，确保每个维度都有对应的证据。
+
+四类读者与面试中的四个维度一一对应。
+
+### 维度一：HR 视角 — 稳定性与匹配度
+
+| 审视项 | 看什么 | 红灯信号 |
+|--------|--------|---------|
+| 职业轨迹 | 经历是否连贯？有没有逻辑主线？ | 频繁跳槽、大段空白期、方向混乱 |
+| 基本匹配 | 硬性条件是否满足？（学历/年限/技能关键词） | 关键词缺失、学历不匹配 |
+| 稳定性信号 | 有没有长期投入的证据？ | 所有经历都很短、没有深度 |
+
+### 维度二：技术/专业视角 — 能力深度
+
+| 审视项 | 看什么 | 红灯信号 |
+|--------|--------|---------|
+| 项目深度 | 描述是否体现了真正的挑战？ | 只有工具名称没有解决的问题 |
+| 问题解决 | 有没有"遇到了什么问题 → 怎么解决的"？ | 只列成果不写过程 |
+| 技术栈 | 技术选型是否有逻辑？深度如何？ | 技术栈罗列但看不出熟练度 |
+
+### 维度三：业务视角 — 业务理解力
+
+| 审视项 | 看什么 | 红灯信号 |
+|--------|--------|---------|
+| 场景理解 | 经历涉及的领域和业务场景是什么？ | 只有技术没有业务语境 |
+| 跨职能协作 | 有没有与其他角色协作的经历？ | 经历过于单一 |
+| 结果导向 | 成果是用业务指标还是技术指标衡量的？ | 只有技术指标没有业务影响 |
+
+### 维度四：决策层视角 — 潜力与格局
+
+| 审视项 | 看什么 | 红灯信号 |
+|--------|--------|---------|
+| 成长轨迹 | 能看到清晰的能力成长线吗？ | 所有经历水平差不多，没有进步 |
+| 自驱力 | 有没有主动发起、推动、优化的证据？ | 所有经历都是被动分配的 |
+| 思维格局 | 有没有超出当前层级的思考或行动？ | 所有描述都局限在执行层面 |
+
+### 审视输出
+
+对每个维度输出判定：
+
+| 判定 | 含义 |
+|------|------|
+| ✅ 通过 | 有足够的证据支撑 |
+| ⚠️ 薄弱 | 有证据但不够充分 |
+| ❌ 缺失 | 完全没有对应证据 |
+
+**审视结果汇总格式：**
+
+```
+## 四维审视结果
+
+| 维度 | 判定 | 关键发现 | 红灯信号 |
+|------|------|---------|---------|
+| HR 视角 | ✅/⚠️/❌ | ... | ... |
+| 技术/专业视角 | ✅/⚠️/❌ | ... | ... |
+| 业务视角 | ✅/⚠️/❌ | ... | ... |
+| 决策层视角 | ✅/⚠️/❌ | ... | ... |
+```
+
+---
+
+## Phase 4：审阅存档
+
+**目标：** 将所有分析结果结构化存档，供下游 SKILL 读取。
+
+### Step 4.1 生成审阅报告
+
+将以下内容整合为一份完整的审阅报告：
+
+1. **经历清单**：Phase 1.2 的时间线（含完整度标记）
+2. **提取的信息点**：Phase 2.1 的六维度提取结果
+3. **四维审视结果**：Phase 3 的判定和关键发现
+4. **发现的问题**：红灯信号、薄弱环节、信息缺口
+5. **建议**：针对每个问题的改进方向
+
+### Step 4.2 保存审阅报告
+
+保存到 `data/{用户标识}/resume-reviews/review-{日期}.md`
+
+文件命名规则：`review-YYYY-MM-DD.md`，同一天多次审阅时追加编号：`review-YYYY-MM-DD-2.md`
+
+### Step 4.3 回写机制
+
+如果审阅中发现了新的认知（被忽略的亮点、新的能力证据、经历补充），需要同步更新：
+
+| 回写目标 | 更新内容 | 条件 |
+|---------|---------|------|
+| `data/{用户标识}/internal-resume.md` | 补充新发现的经历细节、亮点 | 审阅中提取到内部简历未记录的信息 |
+| `data/{用户标识}/profile.md` | 更新能力标签、成长轨迹、优势领域 | 审阅中发现新的能力证据或变化 |
+
+**回写原则：**
+- 只追加，不删除已有内容
+- 在回写处标注来源：`<!-- resume-analyzer review {日期} 回写 -->`
+- 如果目标文件不存在，创建新文件
+
+---
+
+## 对外输出
+
+| 输出节点 | 传递给 | 传递内容 | 用途 |
+|---------|--------|---------|------|
+| 审阅完成 | resume-optimizer | `resume-reviews/` + `internal-resume.md` | 作为生成外部简历的输入 |
+| 审阅完成 | resume-job-matcher | `resume-reviews/` + `internal-resume.md` | 替代其 Part A 的简历分析 |
+| 审阅完成 | career-navigator | `resume-reviews/` | 更新经历资产，反哺能力评估 |
+
+**衔接方式：** 下游 SKILL 读取存档文件即可，无需额外的数据传递格式。所有信息都通过文件系统共享。
+
+---
+
+## 对话节奏控制
+
+- 每轮最多 3-5 个问题
+- 深度探针一次只挖 1-2 段经历
+- 每轮结束前存档（即使未完成全部分析，也要保存当前进度）
+- 如果用户表现出疲劳或回答质量下降，主动提出暂停并在下次继续
+
+---
+
+## 职场轨道特别说明
+
+当用户是职业人士时：
+- 经历清单增加"管理经历"和"跨部门协作"专门标记
+- 深度探针增加"团队管理"和"战略决策"相关探针
+- 四维审视增加"转型合理性"的评估（如果用户在转型）
+- 信息提取增加"行业影响力"和"资源整合"维度
+
+---
+
+## 与其他 SKILL 的关系
+
+```
+career-navigator
+  └── Phase 2 经历深潜 ──→ resume-analyzer（调用）
+                              │
+                              ├──→ resume-optimizer（审阅结果 → 生成外部简历）
+                              ├──→ resume-job-matcher（审阅结果 → 替代 Part A）
+                              └──→ career-navigator（审阅结果 → 更新经历资产）
+```
+
+**独立使用场景：** 用户直接上传简历并希望获得分析，不经过 career-navigator。
